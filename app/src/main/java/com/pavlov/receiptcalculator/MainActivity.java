@@ -19,7 +19,11 @@ import android.os.Environment;
 import android.os.StrictMode;
 import android.provider.MediaStore;
 import android.util.Log;
+import android.util.Pair;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.RelativeLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.pavlov.receiptcalculator.databinding.ActivityMainBinding;
@@ -30,6 +34,8 @@ import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.List;
+import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -169,7 +175,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-//    @RequiresApi(api = Build.VERSION_CODES.M)
+    //    @RequiresApi(api = Build.VERSION_CODES.M)
     public boolean checkPermissions() {
         if (flagPermissions) {
             return true;
@@ -205,11 +211,26 @@ public class MainActivity extends AppCompatActivity {
         }
 
         new Thread(() -> {
-            final String srcText = mTessOCR.getOCRResult(bitmap);
+            List<Pair<String, int[]>> srcText = mTessOCR.getOCRResult(bitmap);
             runOnUiThread(() -> {
+                Random r = new Random();
+                double widthCoef = binding.ocrImage.getWidth() / (double) bitmap.getWidth();
+                // TODO figure out if it should be used? or does the camera always produce an image with the same aspect ratio?
+                double heightCoef = binding.ocrImage.getHeight() / (double) bitmap.getHeight();
+                for (Pair<String, int[]> p : srcText) {
+                    //set the properties for button
+                    TextView numberText = new TextView(this);
+                    numberText.setText(p.first);
+                    numberText.setId(r.nextInt());
+                    int x = p.second[0];
+                    int y = p.second[1];
+                    numberText.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    numberText.setX((int) (x * widthCoef));
+                    numberText.setY((int) (y * widthCoef));
+                    numberText.setPadding(0, 0, 0, 0);
 
-                if (srcText != null && !srcText.equals("")) {
-                    binding.ocrText.setText(srcText.replaceAll("[^0-9.,]+", " "));
+                    //add button to the layout
+                    binding.imgLayout.addView(numberText);
                 }
 
                 mProgressDialog.dismiss();
