@@ -12,6 +12,10 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -21,9 +25,6 @@ import android.provider.MediaStore;
 import android.util.Log;
 import android.util.Pair;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.RelativeLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import com.pavlov.receiptcalculator.databinding.ActivityMainBinding;
@@ -34,8 +35,8 @@ import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.LinkedList;
 import java.util.List;
-import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -45,15 +46,18 @@ public class MainActivity extends AppCompatActivity {
     protected String mCurrentPhotoPath;
     private Uri photoURI1;
     private Uri oldPhotoURI;
+    private List<Rect> rect;
+    private Canvas c;
+    private Bitmap imgBitmap;
 
     private static final String errorFileCreate = "Error file create!";
     private static final String errorConvert = "Error convert!";
     private static final int REQUEST_IMAGE_CAPTURE_1 = 1;
 
-    int PERMISSION_ALL = 1;
-    boolean flagPermissions = false;
+    private final int PERMISSION_ALL = 1;
+    private boolean flagPermissions = false;
 
-    String[] PERMISSIONS = {
+    private String[] PERMISSIONS = {
             android.Manifest.permission.READ_EXTERNAL_STORAGE,
             android.Manifest.permission.CAMERA
     };
@@ -93,19 +97,17 @@ public class MainActivity extends AppCompatActivity {
 
         if (requestCode == REQUEST_IMAGE_CAPTURE_1) {
             if (resultCode == RESULT_OK) {
-                Bitmap bmp = null;
                 try {
                     InputStream is = context.getContentResolver().openInputStream(photoURI1);
                     BitmapFactory.Options options = new BitmapFactory.Options();
-                    bmp = BitmapFactory.decodeStream(is, null, options);
+                    imgBitmap = BitmapFactory.decodeStream(is, null, options);
 
                 } catch (Exception ex) {
                     Log.i(getClass().getSimpleName(), ex.getMessage());
                     Toast.makeText(context, errorConvert, Toast.LENGTH_SHORT).show();
                 }
 
-                binding.ocrImage.setImageBitmap(bmp);
-                doOCR(bmp);
+                doOCR(imgBitmap);
 
                 // TODO why is this needed???
 //                OutputStream os;
@@ -174,8 +176,6 @@ public class MainActivity extends AppCompatActivity {
         return image;
     }
 
-
-    //    @RequiresApi(api = Build.VERSION_CODES.M)
     public boolean checkPermissions() {
         if (flagPermissions) {
             return true;
@@ -203,6 +203,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void doOCR(final Bitmap bitmap) {
+        Bitmap cBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true);
+        binding.ocrImage.setImageBitmap(cBitmap);
+
         if (mProgressDialog == null) {
             mProgressDialog = ProgressDialog.show(this, "Processing",
                     "Doing OCR...", true);
@@ -213,24 +216,25 @@ public class MainActivity extends AppCompatActivity {
         new Thread(() -> {
             List<Pair<String, int[]>> srcText = mTessOCR.getOCRResult(bitmap);
             runOnUiThread(() -> {
-                Random r = new Random();
+                rect = new LinkedList<>();
+                c = new Canvas(cBitmap);
+
                 double widthCoef = binding.ocrImage.getWidth() / (double) bitmap.getWidth();
                 // TODO figure out if it should be used? or does the camera always produce an image with the same aspect ratio?
                 double heightCoef = binding.ocrImage.getHeight() / (double) bitmap.getHeight();
+
                 for (Pair<String, int[]> p : srcText) {
-                    //set the properties for button
-                    TextView numberText = new TextView(this);
-                    numberText.setText(p.first);
-                    numberText.setId(r.nextInt());
+
                     int x = p.second[0];
                     int y = p.second[1];
-                    numberText.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                    numberText.setX((int) (x * widthCoef));
-                    numberText.setY((int) (y * widthCoef));
-                    numberText.setPadding(0, 0, 0, 0);
+                    int w = p.second[2];
+                    int h = p.second[3];
 
-                    //add button to the layout
-                    binding.imgLayout.addView(numberText);
+                    Rect rect = new Rect(x, y, w, h);
+                    Paint paint = new Paint();
+                    paint.setColor(Color.parseColor("#CD5C5C"));
+                    paint.setAlpha(128);
+                    c.drawRect(rect, paint);
                 }
 
                 mProgressDialog.dismiss();
