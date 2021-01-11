@@ -24,6 +24,7 @@ import android.os.StrictMode;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.util.Pair;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Toast;
 
@@ -35,8 +36,9 @@ import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.LinkedList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -46,9 +48,10 @@ public class MainActivity extends AppCompatActivity {
     protected String mCurrentPhotoPath;
     private Uri photoURI1;
     private Uri oldPhotoURI;
-    private List<Rect> rect;
+    private Map<Rect, String> rect;
     private Canvas c;
     private Bitmap imgBitmap;
+    private Paint paint;
 
     private static final String errorFileCreate = "Error file create!";
     private static final String errorConvert = "Error convert!";
@@ -89,6 +92,10 @@ public class MainActivity extends AppCompatActivity {
 
         String language = "eng";
         mTessOCR = new TesseractOCR(this, language);
+
+        paint = new Paint();
+        paint.setColor(Color.parseColor("#CD5C5C"));
+        paint.setAlpha(128);
     }
 
     @Override
@@ -130,6 +137,37 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (rect == null) {
+            return super.dispatchTouchEvent(event);
+        }
+
+        int touchX = (int)event.getX();
+        int touchY = (int)event.getY();
+        switch(event.getAction()){
+            case MotionEvent.ACTION_DOWN:
+                System.out.println("Touching down!");
+                for(Map.Entry<Rect, String> rect : rect.entrySet()){
+                    if(rect.getKey().contains(touchX,touchY)){
+                        System.out.println("Touched Rectangle, start activity.");
+                        // TODO open modal to sum number
+//                        Intent i = new Intent(<your activity info>);
+//                        startActivity(i);
+                    }
+                }
+                break;
+            case MotionEvent.ACTION_UP:
+                System.out.println("Touching up!");
+                break;
+            case MotionEvent.ACTION_MOVE:
+                System.out.println("Sliding your finger around on the screen.");
+                break;
+        }
+
+        return super.dispatchTouchEvent(event);
     }
 
     public void onClickScanButton(View view) {
@@ -205,6 +243,7 @@ public class MainActivity extends AppCompatActivity {
     private void doOCR(final Bitmap bitmap) {
         Bitmap cBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true);
         binding.ocrImage.setImageBitmap(cBitmap);
+        binding.ocrImage.postInvalidate();
 
         if (mProgressDialog == null) {
             mProgressDialog = ProgressDialog.show(this, "Processing",
@@ -216,12 +255,27 @@ public class MainActivity extends AppCompatActivity {
         new Thread(() -> {
             List<Pair<String, int[]>> srcText = mTessOCR.getOCRResult(bitmap);
             runOnUiThread(() -> {
-                rect = new LinkedList<>();
+                rect = new HashMap<>();
                 c = new Canvas(cBitmap);
 
-                double widthCoef = binding.ocrImage.getWidth() / (double) bitmap.getWidth();
-                // TODO figure out if it should be used? or does the camera always produce an image with the same aspect ratio?
-                double heightCoef = binding.ocrImage.getHeight() / (double) bitmap.getHeight();
+                // image and screen are not the same size
+                // touch events have the exact screen coords
+                // also, the image view's top left coords are not 0,0 as it is positioned lower
+                // on the screen (below the scan button)
+                // find the scale coefficient
+                // factor in image view start position
+
+                Rect imgCoords = new Rect();
+                binding.ocrImage.getGlobalVisibleRect(imgCoords);
+
+                int imgXOffset = imgCoords.left;
+                int imgYOffset = imgCoords.top;
+                double widthCoef = Math.max(imgCoords.right - imgCoords.left, cBitmap.getWidth())
+                        / (double)Math.min(imgCoords.right - imgCoords.left, cBitmap.getWidth());
+                double heightCoef = Math.max(imgCoords.bottom - imgCoords.top, cBitmap.getHeight())
+                        / (double)Math.min(imgCoords.bottom - imgCoords.top, cBitmap.getHeight());
+
+                boolean screenBigger = imgCoords.bottom > cBitmap.getHeight();
 
                 for (Pair<String, int[]> p : srcText) {
 
@@ -230,15 +284,22 @@ public class MainActivity extends AppCompatActivity {
                     int w = p.second[2];
                     int h = p.second[3];
 
-                    Rect rect = new Rect(x, y, w, h);
-                    Paint paint = new Paint();
-                    paint.setColor(Color.parseColor("#CD5C5C"));
-                    paint.setAlpha(128);
-                    c.drawRect(rect, paint);
+                    Rect r = new Rect(x, y, w, h);
+                    c.drawRect(r, paint);
+
+                    x = rectangleCoordsTranform(p.second[0], widthCoef, screenBigger, imgXOffset);
+                    y = rectangleCoordsTranform(p.second[1], heightCoef, screenBigger, imgYOffset);
+                    w = rectangleCoordsTranform(p.second[2], widthCoef, screenBigger, imgXOffset);
+                    h = rectangleCoordsTranform(p.second[3], heightCoef, screenBigger, imgYOffset);
+                    rect.put(new Rect(x, y, w, h), p.first);
                 }
 
                 mProgressDialog.dismiss();
             });
         }).start();
+    }
+
+    private int rectangleCoordsTranform(int coord, double coef, boolean screenBigger, int offset) {
+        return (int)(screenBigger ? coord * coef : coord / coef) + offset;
     }
 }
